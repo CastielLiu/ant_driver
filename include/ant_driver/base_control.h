@@ -116,7 +116,7 @@ private:
 	bool is_driverlessMode_;
 	uint8_t stm32_brake_;
 	
-	boost::shared_ptr<boost::thread> readFromStm32_thread_ptr_; //智能指针 
+	boost::shared_ptr<boost::thread> readFromStm32_thread_ptr_; 
 	
 	ros::Subscriber cmd1_sub;
 	ros::Subscriber cmd2_sub;
@@ -135,7 +135,8 @@ private:
 	std::string stm32_port_name_;
 	int stm32_baudrate_;
 	
-	float max_steering_speed_;  //Front and rear frame maximun steering angle difference 
+	float max_steering_speed_;  //Front and rear frame maximun steering angle difference
+	int steering_offset_; 
 	
 	
 	CanMsg_t canMsg_cmd1;

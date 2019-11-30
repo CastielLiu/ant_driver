@@ -11,8 +11,8 @@ static bool openSerial(serial::Serial* & port_ptr, std::string port_name,int bau
 
 		if (!port_ptr->isOpen())
 		{
-	        std::stringstream output;
-	        output << "Serial port: " << port_name << " failed to open." << std::endl;
+			std::stringstream output;
+			output << "Serial port: " << port_name << " failed to open." << std::endl;
 			delete port_ptr;
 			port_ptr = NULL;
 			return false;
@@ -78,6 +78,8 @@ bool BaseControl::init(int argc,char**argv)
 	nh_private.param<std::string>("obd_can_port_name", obd_can_port_name_, "");
 	nh_private.param<std::string>("stm32_port_name", stm32_port_name_, "");
 	nh_private.param<float>("max_steering_speed",max_steering_speed_,2.0);
+	nh_private.param<int>("steering_offset",steering_offset_,0);
+	
 	nh_private.param<int>("stm32_baudrate",stm32_baudrate_,115200);
 	
 	
@@ -562,7 +564,7 @@ void BaseControl::callBack2(const little_ant_msgs::ControlCmd2::ConstPtr msg)
 		
 	last_set_steeringAngle = current_set_steeringAngle;
 	
-	uint16_t steeringAngle = 10800 - (current_set_steeringAngle*10 - 20) ; //steering offset
+	uint16_t steeringAngle = 10800 - (current_set_steeringAngle*10 - steering_offset_) ;
 	
 	canMsg_cmd2.data[4] =  uint8_t(steeringAngle / 256);
 	canMsg_cmd2.data[5] = uint8_t(steeringAngle % 256);
