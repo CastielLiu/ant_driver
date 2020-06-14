@@ -519,8 +519,12 @@ void BaseControl::callBack2(const little_ant_msgs::ControlCmd2::ConstPtr msg)
 	
 	int currentSpeed = state2.vehicle_speed * 3.6;
 	
+	if(msg->set_speed == 0)
+	{
+		set_brake = fabs(currentSpeed - msg->set_speed) *3 + 40;
+	}
 	//当设定速度低于当前速度时，制动
-	if(currentSpeed  > 2.0 + msg->set_speed)
+	else if(currentSpeed  > 2.0 + msg->set_speed)
 	{
 		set_brake = (currentSpeed - msg->set_speed - 2.0) *3 + 40;
 	}
