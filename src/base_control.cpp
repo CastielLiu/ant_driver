@@ -377,13 +377,17 @@ void BaseControl::setDriverlessMode()
 		}
 	}
 	
+	//设置转角指令,中位或者当前位置
+	uint16_t current_steeringVal = (1080.0-state4.steeringAngle)*10;
 	const uint16_t middle_steeringValue = 10800; //middle
-	canMsg_cmd2.data[4] =  uint8_t(middle_steeringValue / 256);
-	canMsg_cmd2.data[5] = uint8_t(middle_steeringValue % 256);
+	canMsg_cmd2.data[4] =  uint8_t(current_steeringVal / 256);
+	canMsg_cmd2.data[5] = uint8_t(current_steeringVal % 256);
 	
+	//循环尝试挂挡.直到挂挡成功
 	for(size_t count = 0; ros::ok() && state1.act_gear != 1; ++count)
 	{
-		if(count%6==0)
+		//n次上档信号,若未成功,发送下档信号后再次尝试上档
+		if(count%6==0) 
 			canMsg_cmd2.data[0] = 0x00;
 		else
 			canMsg_cmd2.data[0] = 0x01;
@@ -391,7 +395,7 @@ void BaseControl::setDriverlessMode()
 		can2serial.sendCanMsg(canMsg_cmd2);
 		usleep(10000);
 	}
-	canMsg_cmd2.data[0] = 0x01;
+	canMsg_cmd2.data[0] = 0x01; //前进档
 	
 	//to Ensure steering stability at set value
 	for(size_t count=0; count<50; count++)
@@ -403,6 +407,7 @@ void BaseControl::setDriverlessMode()
 		can2serial.sendCanMsg(canMsg_cmd1);
 	}
 	
+	//情况stm32串口数据,此处长时间处理，将导致串口数据陈旧
 	stm32_serial_port_->flushInput();
 }
 void BaseControl::exitDriverlessMode()
@@ -548,10 +553,19 @@ void BaseControl::callBack2(const little_ant_msgs::ControlCmd2::ConstPtr msg)
 	
 	canMsg_cmd2.data[1] = uint8_t(set_speed * 10 * 15.0 / MAX_SPEED);
 	
+	if(set_brake > 100) set_brake = 100;
+	
+	//制动分配,电制动/外部制动,0-40电制动,40-100,机械制动+电制动
 	if(set_brake>40)
+	{
 		canMsg_cmd2.data[2] = uint8_t(40 *2.5);
+		stm32_brake_ = (set_brake - 40)/60.0 * 100;
+	}
 	else
+	{
 		canMsg_cmd2.data[2] = uint8_t(set_brake *2.5);
+		stm32_brake_ = 0;
+	}
 	
 	canMsg_cmd2.data[3] = uint8_t(msg->set_accelerate *50);
 	
@@ -565,7 +579,7 @@ void BaseControl::callBack2(const little_ant_msgs::ControlCmd2::ConstPtr msg)
 		current_set_steeringAngle = last_set_steeringAngle + max_steering_speed_;
 	else if(current_set_steeringAngle - last_set_steeringAngle < -max_steering_speed_)
 		current_set_steeringAngle = last_set_steeringAngle - max_steering_speed_;
-		
+	
 	last_set_steeringAngle = current_set_steeringAngle;
 	
 	uint16_t steeringAngle = 10800 - (current_set_steeringAngle*10 - steering_offset_) ;
@@ -580,14 +594,7 @@ void BaseControl::callBack2(const little_ant_msgs::ControlCmd2::ConstPtr msg)
 		
 	can2serial.sendCanMsg(canMsg_cmd2);
 	
-	if(set_brake > 100)
-		stm32_brake_ = 100;
-	else if(set_brake >40)
-		stm32_brake_ = (set_brake - 40)/60.0 * 100;
-	else
-		stm32_brake_ = 0;
-	
-//	std::cout << "stm32_brake_: " << int(stm32_brake_) << std::endl;
+	//	std::cout << "stm32_brake_: " << int(stm32_brake_) << std::endl;
 }
 
 uint8_t BaseControl::generateCheckNum(const void* voidPtr,size_t len)
