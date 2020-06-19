@@ -572,8 +572,8 @@ void BaseControl::callBack2(const little_ant_msgs::ControlCmd2::ConstPtr msg)
 	static float last_set_steeringAngle = state4.steeringAngle;
 	float current_set_steeringAngle = msg->set_roadWheelAngle * g_steering_gearRatio;  // -540~540deg
 	
-	if(current_set_steeringAngle>480.0) current_set_steeringAngle=480.0;
-	else if(current_set_steeringAngle<-480.0) current_set_steeringAngle =-480.0;
+	if(current_set_steeringAngle>530.0) current_set_steeringAngle=530;
+	else if(current_set_steeringAngle<-500.0) current_set_steeringAngle =-500.0;
 	
 	if(current_set_steeringAngle - last_set_steeringAngle > max_steering_speed_)
 		current_set_steeringAngle = last_set_steeringAngle + max_steering_speed_;
