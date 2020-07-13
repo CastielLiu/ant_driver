@@ -384,10 +384,10 @@ void BaseControl::setDriverlessMode()
 	canMsg_cmd2.data[5] = uint8_t(current_steeringVal % 256);
 	
 	//循环尝试挂挡.直到挂挡成功
-	for(size_t count = 0; ros::ok() && state1.act_gear != 1; ++count)
+	for(size_t count = 0; ros::ok() && state1.act_gear != GearValue_Drive; ++count)
 	{
 		//n次上档信号,若未成功,发送下档信号后再次尝试上档
-		if(count%6==0) 
+		if(count%50==0) 
 			canMsg_cmd2.data[0] = 0x00;
 		else
 			canMsg_cmd2.data[0] = 0x01;

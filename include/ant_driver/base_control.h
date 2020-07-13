@@ -32,7 +32,7 @@
 #define ID_STATE4 0x1D5
 
 #ifndef MAX_SPEED
-#define MAX_SPEED 30.0
+#define MAX_SPEED 60.0
 #endif
 
 
@@ -83,6 +83,13 @@ union StateUnion_t
 {
 	StateMsg_t state;
 	uint64_t data;
+};
+
+enum GearValue
+{
+	GearValue_Drive = 11,
+	GearValue_Neutral = 12,
+	GearValue_Reverse = 13,
 };
 
 class BaseControl
