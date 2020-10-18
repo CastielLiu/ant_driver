@@ -10,7 +10,7 @@ project(ant_driver)
 find_package(catkin REQUIRED COMPONENTS
   ant_math
   can2serial
-  little_ant_msgs
+  ant_msgs
   roscpp
   rospy
   serial
@@ -22,7 +22,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES ant_base_control
-#  CATKIN_DEPENDS ant_math can2serial little_ant_msgs roscpp rospy serial std_msgs
+#  CATKIN_DEPENDS ant_math can2serial ant_msgs roscpp rospy serial std_msgs
 #  DEPENDS system_lib
 )
 

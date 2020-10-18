@@ -1,7 +1,7 @@
 #include<iostream>
 #include"serial.h"
-#include"little_ant_msgs/ControlCmd1.h"
-#include"little_ant_msgs/ControlCmd2.h"
+#include"ant_msgs/ControlCmd1.h"
+#include"ant_msgs/ControlCmd2.h"
 #include<boost/thread.hpp>
 #include<boost/bind.hpp>
 
@@ -31,14 +31,14 @@ int main(int argc ,char **argv)
 	ros::NodeHandle nh_private("~");
 	nh_private.param<std::string>("port_name",port_name_,"/dev/ttyUSB0");
 	
-	ros::Publisher pub1 = nh.advertise<little_ant_msgs::ControlCmd1>("/controlCmd1",10);
-	ros::Publisher pub2 = nh.advertise<little_ant_msgs::ControlCmd2>("/controlCmd2",10);
+	ros::Publisher pub1 = nh.advertise<ant_msgs::ControlCmd1>("/controlCmd1",10);
+	ros::Publisher pub2 = nh.advertise<ant_msgs::ControlCmd2>("/controlCmd2",10);
 	
 	boost::thread parseThread(boost::bind(&getMsg));//thread
 	usleep(100000);
 	
-	little_ant_msgs::ControlCmd1 cmd1;
-	little_ant_msgs::ControlCmd2 cmd2;
+	ant_msgs::ControlCmd1 cmd1;
+	ant_msgs::ControlCmd2 cmd2;
 	
 	float speed = 0, steer = 0, steer_right = 0, brake = 0;
 	bool didi = 0, left_light = 0, right_light = 0, D_change = 0, hand_brake = 0,mode=0 , emergencyBrake=0;

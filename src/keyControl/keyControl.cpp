@@ -2,8 +2,8 @@
 #include <unistd.h>
 #include <linux/input.h>
 #include <fcntl.h>
-#include"little_ant_msgs/ControlCmd1.h"
-#include"little_ant_msgs/ControlCmd2.h"
+#include"ant_msgs/ControlCmd1.h"
+#include"ant_msgs/ControlCmd2.h"
 
 #include<ros/ros.h>
 
@@ -27,14 +27,14 @@ int main(int argc ,char **argv)
 	
 	ros::NodeHandle nh;
 	
-	ros::Publisher pub1 = nh.advertise<little_ant_msgs::ControlCmd1>("/controlCmd1",10);
-	ros::Publisher pub2 = nh.advertise<little_ant_msgs::ControlCmd2>("/controlCmd2",10);
+	ros::Publisher pub1 = nh.advertise<ant_msgs::ControlCmd1>("/controlCmd1",10);
+	ros::Publisher pub2 = nh.advertise<ant_msgs::ControlCmd2>("/controlCmd2",10);
 	
 	double speed=0, steer=0, steer_right=0, brake=0;
 	int didi=0, left_light=0, right_light=0, D_change=0, hand_brake=0;
 	int keyboard=65535;
-	little_ant_msgs::ControlCmd1 cmd1;
-	little_ant_msgs::ControlCmd2 cmd2;
+	ant_msgs::ControlCmd1 cmd1;
+	ant_msgs::ControlCmd2 cmd2;
 	
 	
     while(1)

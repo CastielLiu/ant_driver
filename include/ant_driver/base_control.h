@@ -12,14 +12,14 @@
 #include<boost/bind.hpp>
 #include<std_msgs/UInt64.h>
 
-#include <little_ant_msgs/State1.h>
-#include <little_ant_msgs/State2.h>
-#include <little_ant_msgs/State3.h>
-#include <little_ant_msgs/State4.h>
+#include <ant_msgs/State1.h>
+#include <ant_msgs/State2.h>
+#include <ant_msgs/State3.h>
+#include <ant_msgs/State4.h>
 
 
-#include <little_ant_msgs/ControlCmd1.h>
-#include <little_ant_msgs/ControlCmd2.h>
+#include <ant_msgs/ControlCmd1.h>
+#include <ant_msgs/ControlCmd2.h>
 
 #include<ant_math/ant_math.h>
 
@@ -103,8 +103,8 @@ public:
 	void parse_obdCanMsg();
 	void read_stm32_port();
 
-	void callBack1(const little_ant_msgs::ControlCmd1::ConstPtr msg);
-	void callBack2(const little_ant_msgs::ControlCmd2::ConstPtr msg);
+	void callBack1(const ant_msgs::ControlCmd1::ConstPtr msg);
+	void callBack2(const ant_msgs::ControlCmd2::ConstPtr msg);
 	void timer_callBack(const ros::TimerEvent& event);
 	
 private:
@@ -149,10 +149,10 @@ private:
 	CanMsg_t canMsg_cmd1;
 	CanMsg_t canMsg_cmd2;
 	
-	little_ant_msgs::State1 state1;
-	little_ant_msgs::State2 state2;
-	little_ant_msgs::State3 state3;
-	little_ant_msgs::State4 state4;
+	ant_msgs::State1 state1;
+	ant_msgs::State2 state2;
+	ant_msgs::State3 state3;
+	ant_msgs::State4 state4;
 	
 	boost::mutex mutex_;
 

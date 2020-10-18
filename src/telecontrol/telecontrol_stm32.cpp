@@ -1,8 +1,8 @@
 #include<iostream>
 #include "getPkgFromDev.h"
-#include"little_ant_msgs/ControlCmd1.h"
-#include"little_ant_msgs/ControlCmd2.h"
-#include<little_ant_msgs/ControlCmd.h>
+#include"ant_msgs/ControlCmd1.h"
+#include"ant_msgs/ControlCmd2.h"
+#include<ant_msgs/ControlCmd.h>
 #include<std_msgs/Bool.h>
 #include<boost/thread.hpp>
 #include<boost/bind.hpp>
@@ -17,7 +17,7 @@ public:
 	
 	Telecontrol()
 	{
-		telecontrol_cmd_.origin = little_ant_msgs::ControlCmd::_TELECONTROL;  //_TELECONTROL  _LIDAR
+		telecontrol_cmd_.origin = ant_msgs::ControlCmd::_TELECONTROL;  //_TELECONTROL  _LIDAR
 	}
 	~Telecontrol(){}
 	
@@ -25,7 +25,7 @@ public:
 	{
 		nh_private.param<std::string>("port_name",port_name_,"/dev/U3");
 	
-		pub_telecontrol_cmd_ = nh.advertise<little_ant_msgs::ControlCmd>("/sensor_decision",2);
+		pub_telecontrol_cmd_ = nh.advertise<ant_msgs::ControlCmd>("/sensor_decision",2);
 	
 	}
 	void run()
@@ -153,7 +153,7 @@ private:
 	
 	float speed = 0, steer = 0, hand_brake = 0, D_change = 0, left_light = 0, right_light = 0 , brake =0.0;
 	
-	little_ant_msgs::ControlCmd telecontrol_cmd_;
+	ant_msgs::ControlCmd telecontrol_cmd_;
 	
 	ros::Publisher pub_telecontrol_cmd_;
 	

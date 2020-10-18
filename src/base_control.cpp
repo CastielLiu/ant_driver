@@ -89,10 +89,10 @@ bool BaseControl::init(int argc,char**argv)
 	cmd1_sub = nh.subscribe("/controlCmd1",1,&BaseControl::callBack1,this);
 	cmd2_sub = nh.subscribe("/controlCmd2",1,&BaseControl::callBack2,this);
 	
-	state1_pub = nh.advertise<little_ant_msgs::State1>("vehicleState1",10);
-	state2_pub = nh.advertise<little_ant_msgs::State2>("vehicleState2",10);
-	state3_pub = nh.advertise<little_ant_msgs::State3>("vehicleState3",10);
-	state4_pub = nh.advertise<little_ant_msgs::State4>("vehicleState4",10);
+	state1_pub = nh.advertise<ant_msgs::State1>("vehicleState1",10);
+	state2_pub = nh.advertise<ant_msgs::State2>("vehicleState2",10);
+	state3_pub = nh.advertise<ant_msgs::State3>("vehicleState3",10);
+	state4_pub = nh.advertise<ant_msgs::State4>("vehicleState4",10);
 	std_msg_pub = nh.advertise<std_msgs::UInt64>("vehicle_info",1);
 	
 	timer_ = nh.createTimer(ros::Duration(0.03), &BaseControl::timer_callBack, this);
@@ -459,7 +459,7 @@ void BaseControl::timer_callBack(const ros::TimerEvent& event)
 
 }
 
-void BaseControl::callBack1(const little_ant_msgs::ControlCmd1::ConstPtr msg)
+void BaseControl::callBack1(const ant_msgs::ControlCmd1::ConstPtr msg)
 {
 	if(!is_driverlessMode_)
 		return ;
@@ -513,7 +513,7 @@ void BaseControl::callBack1(const little_ant_msgs::ControlCmd1::ConstPtr msg)
 }
 
 
-void BaseControl::callBack2(const little_ant_msgs::ControlCmd2::ConstPtr msg)
+void BaseControl::callBack2(const ant_msgs::ControlCmd2::ConstPtr msg)
 {
 	if(!is_driverlessMode_)
 		return ;
