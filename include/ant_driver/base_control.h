@@ -21,7 +21,6 @@
 #include <ant_msgs/ControlCmd1.h>
 #include <ant_msgs/ControlCmd2.h>
 
-#include<ant_math/ant_math.h>
 
 #define ID_CMD_1 0x2C5
 #define	ID_CMD_2 0x1C5
