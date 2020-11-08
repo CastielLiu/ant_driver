@@ -56,7 +56,6 @@ BaseControl::BaseControl():
     *(long *)canMsg_cmd2.data = 0;
     canMsg_cmd2.data[4] = 0xFF;
     canMsg_cmd2.data[5] = 0xFF; //set the steer angle value invalid
-    
 }
 
 BaseControl::~BaseControl()
@@ -79,6 +78,7 @@ bool BaseControl::init(int argc,char**argv)
 	nh_private.param<std::string>("stm32_port_name", stm32_port_name_, "");
 	nh_private.param<float>("max_steering_speed",max_steering_speed_,2.0);
 	nh_private.param<int>("steering_offset",steering_offset_,0);
+	nh_private.param<bool>("default_drive_gear", default_drive_gear_, true);//是否默认为前进档
 	
 	nh_private.param<int>("stm32_baudrate",stm32_baudrate_,115200);
 	
@@ -383,19 +383,23 @@ void BaseControl::setDriverlessMode()
 	canMsg_cmd2.data[4] =  uint8_t(current_steeringVal / 256);
 	canMsg_cmd2.data[5] = uint8_t(current_steeringVal % 256);
 	
-	//循环尝试挂挡.直到挂挡成功
-	for(size_t count = 0; ros::ok() && state1.act_gear != state1.GEAR_DRIVE; ++count)
+	if(default_drive_gear_)
 	{
-		//n次上档信号,若未成功,发送下档信号后再次尝试上档
-		if(count%50==0) 
-			canMsg_cmd2.data[0] = 0x00;
-		else
-			canMsg_cmd2.data[0] = 0x01;
-			
-		can2serial.sendCanMsg(canMsg_cmd2);
-		usleep(10000);
+		//循环尝试挂D挡.直到挂挡成功
+		for(size_t count = 0; ros::ok() && state1.act_gear != state1.GEAR_DRIVE; ++count)
+		{
+			//n次上档信号,若未成功,发送N档信号后再次尝试上档
+			if(count%50==0) 
+				canMsg_cmd2.data[0] = ant_msgs::ControlCmd2::GEAR_NEUTRAL; //N档 
+			else
+				canMsg_cmd2.data[0] = ant_msgs::ControlCmd2::GEAR_DRIVE; //D档 
+			ant_msgs::ControlCmd2::GEAR_DRIVE;
+				
+			can2serial.sendCanMsg(canMsg_cmd2);
+			usleep(10000);
+		}
+		canMsg_cmd2.data[0] = 0x01; //前进档
 	}
-	canMsg_cmd2.data[0] = 0x01; //前进档
 	
 	//to Ensure steering stability at set value
 	for(size_t count=0; count<50; count++)
@@ -417,7 +421,7 @@ void BaseControl::exitDriverlessMode()
 	*(unsigned long int*)canMsg_cmd2.data = 0;
 
 	canMsg_cmd1.data[0] = 0x00; //driverless_mode
-	canMsg_cmd2.data[0] = 0x00; //set_gear 0
+	canMsg_cmd2.data[0] = ant_msgs::ControlCmd2::GEAR_NEUTRAL; //set_gear 0
 	
 	uint16_t steeringAngle = 10800; //middle
 	

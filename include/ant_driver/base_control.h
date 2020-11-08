@@ -121,6 +121,7 @@ private:
 	
 	bool is_driverlessMode_;
 	uint8_t stm32_brake_;
+	bool default_drive_gear_; //是否默认进入自动驾驶模式后为前进档
 	
 	boost::shared_ptr<boost::thread> readFromStm32_thread_ptr_; 
 	
