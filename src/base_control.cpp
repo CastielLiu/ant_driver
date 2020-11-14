@@ -92,7 +92,7 @@ bool BaseControl::init(int argc,char**argv)
 	state2_pub = nh.advertise<ant_msgs::State2>("vehicleState2",10);
 	state3_pub = nh.advertise<ant_msgs::State3>("vehicleState3",10);
 	state4_pub = nh.advertise<ant_msgs::State4>("vehicleState4",10);
-	state_pub = nh.advertise<ant_msgs::State1>("vehicleState",10);
+	state_pub = nh.advertise<ant_msgs::State>("vehicleState",10);
 	
 	timer_ = nh.createTimer(ros::Duration(0.03), &BaseControl::timer_callBack, this);
 	
