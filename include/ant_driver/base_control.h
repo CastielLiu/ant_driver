@@ -12,11 +12,11 @@
 #include<boost/bind.hpp>
 #include<std_msgs/UInt64.h>
 
+#include <ant_msgs/State.h>
 #include <ant_msgs/State1.h>
 #include <ant_msgs/State2.h>
 #include <ant_msgs/State3.h>
 #include <ant_msgs/State4.h>
-
 
 #include <ant_msgs/ControlCmd1.h>
 #include <ant_msgs/ControlCmd2.h>
@@ -62,34 +62,7 @@ typedef struct
 	uint8_t checkNum;
 	
 }) stm32Msg1_t;
-
 // end for stm32
-
-PACK(
-typedef struct 
-{
-	uint8_t act_gear :4;
-	uint8_t driverless_mode :1;
-	uint8_t hand_brake :1;
-	uint8_t emergency_brake :1;
-	uint8_t car_state :1;
-	uint16_t speed;
-	uint16_t roadwheelAngle;
-	
-}) StateMsg_t;
-
-union StateUnion_t
-{
-	StateMsg_t state;
-	uint64_t data;
-};
-
-enum GearValue
-{
-	GearValue_Drive = 11,
-	GearValue_Neutral = 12,
-	GearValue_Reverse = 13,
-};
 
 class BaseControl
 {
@@ -132,8 +105,7 @@ private:
 	ros::Publisher state2_pub;
 	ros::Publisher state3_pub;
 	ros::Publisher state4_pub;
-	
-	ros::Publisher std_msg_pub;
+	ros::Publisher state_pub;
 	
 	ros::Timer timer_;
 	

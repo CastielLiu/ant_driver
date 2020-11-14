@@ -82,7 +82,6 @@ bool BaseControl::init(int argc,char**argv)
 	
 	nh_private.param<int>("stm32_baudrate",stm32_baudrate_,115200);
 	
-	
 	assert(!obd_can_port_name_.empty() && !stm32_port_name_.empty());
 	assert(max_steering_speed_>0);
 	
@@ -93,7 +92,7 @@ bool BaseControl::init(int argc,char**argv)
 	state2_pub = nh.advertise<ant_msgs::State2>("vehicleState2",10);
 	state3_pub = nh.advertise<ant_msgs::State3>("vehicleState3",10);
 	state4_pub = nh.advertise<ant_msgs::State4>("vehicleState4",10);
-	std_msg_pub = nh.advertise<std_msgs::UInt64>("vehicle_info",1);
+	state_pub = nh.advertise<ant_msgs::State1>("vehicleState",10);
 	
 	timer_ = nh.createTimer(ros::Duration(0.03), &BaseControl::timer_callBack, this);
 	
@@ -448,19 +447,17 @@ void BaseControl::timer_callBack(const ros::TimerEvent& event)
 	send_to_stm32_buf[7] = generateCheckNum(send_to_stm32_buf,8);
 	stm32_serial_port_->write(send_to_stm32_buf,8);
 	
-	//publish other msg
-	static StateUnion_t msg;
-	msg.state.act_gear = state1.act_gear;
-	msg.state.driverless_mode = state4.driverless_mode;
-	msg.state.hand_brake = 0;
-	msg.state.emergency_brake = 0;
-	msg.state.car_state = state1.vehicle_ready;
-	msg.state.speed = state2.vehicle_speed * 3.6 *100;
-	msg.state.roadwheelAngle = state4.roadwheelAngle *100 + 5000;
-	static std_msgs::UInt64 ros_msg;
-	ros_msg.data = msg.data;
-	std_msg_pub.publish(ros_msg);
+	//发布汽车状态信息，该信息为4部分信息的整合
+	ant_msgs::State state;
+	state.act_gear = state1.act_gear;
+	state.driverless_mode = state4.driverless_mode;
+	state.hand_brake = 0;
+	state.emergency_brake = 0;
+	state.vehicle_ready = state1.vehicle_ready;
+	state.vehicle_speed = state2.vehicle_speed;
+	state.roadwheelAngle = state4.roadwheelAngle;
 
+	state_pub.publish(state);
 }
 
 void BaseControl::callBack1(const ant_msgs::ControlCmd1::ConstPtr msg)
