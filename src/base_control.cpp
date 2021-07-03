@@ -213,6 +213,10 @@ void BaseControl::parse_obdCanMsg()
 				state4.steeringAngle = 1080.0-(canMsg.data[1]*256+canMsg.data[2])*0.1;
 				//std::cout << state4.steeringAngle << std::endl;
 				state4.roadwheelAngle = state4.steeringAngle/g_steering_gearRatio;
+				state4.manualCtrlDetected = bool(canMsg.data[0]&0x02);
+				if(state4.manualCtrlDetected)
+					manualCtrlDetected_ = true;
+
 				if(state4.steeringAngle==6553.5)
 					state4.steeringAngle_valid = 0;
 				else
@@ -328,7 +332,12 @@ void BaseControl::parse_stm32_msgs()
 
 	if(stm32_msg1Ptr_->id == 0x01)
 	{
+		static bool last_allow_driverless = false;
 	    allow_driverless_ = (stm32_msg1Ptr_->is_start && !stm32_msg1Ptr_->is_emergency_brake);
+		if(last_allow_driverless == false && allow_driverless_)
+			manualCtrlDetected_ = false; //重新允许自动驾驶，清除历史检测到的人工介入标志
+		
+		last_allow_driverless = allow_driverless_;
 	}
 }
 
@@ -357,7 +366,16 @@ void BaseControl::timer_callBack(const ros::TimerEvent& event)
 
 void BaseControl::callBack1(const ant_msgs::ControlCmd1::ConstPtr msg)
 {
-	if(msg->set_driverlessMode && allow_driverless_)
+	static bool last_set_driverless = false;
+	
+	//重新请求自动驾驶，清除历史检测到的人工介入标志
+	if(last_set_driverless == false && msg->set_driverlessMode)
+	{
+		manualCtrlDetected_ = false;
+	}
+	last_set_driverless = msg->set_driverlessMode;
+
+	if(msg->set_driverlessMode && allow_driverless_ && !manualCtrlDetected_)
 		canMsg_cmd1.data[0] |= 0x01;
 	else
 		canMsg_cmd1.data[0] &= 0xfe;
@@ -411,6 +429,10 @@ void BaseControl::callBack2(const ant_msgs::ControlCmd2::ConstPtr msg)
 //	if(!is_driverless_mode_)
 //		return ;
 		
+	uint8_t set_gear = msg->set_gear;
+	if(!is_driverless_mode_ )
+		set_gear = msg->GEAR_NEUTRAL;
+
 	float set_speed = msg->set_speed;
 	float set_brake = msg->set_brake;
 	int currentSpeed = state2.vehicle_speed * 3.6;
@@ -440,7 +462,7 @@ void BaseControl::callBack2(const ant_msgs::ControlCmd2::ConstPtr msg)
 			
 		
 	canMsg_cmd2.data[0] &= 0xf0; //clear least 4bits
-	canMsg_cmd2.data[0] |= (msg->set_gear)&0x0f;
+	canMsg_cmd2.data[0] |= (set_gear)&0x0f;
 	
 	canMsg_cmd2.data[1] = uint8_t(set_speed * 10 * 15.0 / MAX_SPEED);
 	
