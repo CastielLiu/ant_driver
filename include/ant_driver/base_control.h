@@ -83,8 +83,6 @@ private:
 	void Stm32BufferIncomingData(unsigned char *message, unsigned int length);
 	void parse_stm32_msgs();
 	uint8_t generateCheckNum(const void* voidPtr,size_t len);
-	void setDriverlessMode();
-	void exitDriverlessMode();
 	
 private:
 	Can2serial can2serial;
@@ -92,7 +90,8 @@ private:
 	
 	const stm32Msg1_t *stm32_msg1Ptr_;
 	
-	bool is_driverlessMode_;
+	bool is_driverless_mode_; //是否为自动驾驶模式(实际值)
+	bool allow_driverless_;   //是否允许进入自动驾驶模式
 	uint8_t stm32_brake_;
 	bool default_drive_gear_; //是否默认进入自动驾驶模式后为前进档
 	
