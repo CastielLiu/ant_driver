@@ -76,7 +76,7 @@ bool BaseControl::init(int argc,char**argv)
 	
 	nh_private.param<std::string>("obd_can_port_name", obd_can_port_name_, "");
 	nh_private.param<std::string>("stm32_port_name", stm32_port_name_, "");
-	nh_private.param<float>("max_steering_speed",max_steering_speed_,2.0);
+	nh_private.param<float>("max_steering_speed",max_steering_speed_,2.0); //通过限制前后帧转角命令差值 控制转向最大速度**
 	nh_private.param<int>("steering_offset",steering_offset_,0);
 	nh_private.param<bool>("default_drive_gear", default_drive_gear_, true);//是否默认为前进档
 	
