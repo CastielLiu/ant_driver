@@ -1,25 +1,35 @@
 #ifndef MSG_HANDLER_H_
 #define MSG_HANDLER_H_
 
+#include <mutex>
+#include <cmath>
+#include <cstdlib>
+#include <algorithm>
+#include <iostream>
 #include <ros/ros.h>
 #include <std_msgs/String.h>
-#include <iostream>
-#include<can2serial/can2serial.h>
-#include<serial/serial.h>
-#include<arpa/inet.h>
+#include <can2serial/can2serial.h>
+// #include <serial/serial.h>
+// #include <arpa/inet.h>
 
-#include<boost/thread.hpp>
-#include<boost/bind.hpp>
-#include<std_msgs/UInt64.h>
+#include <boost/thread.hpp>
+#include <boost/bind.hpp>
 
-#include <ant_msgs/State.h>
-#include <ant_msgs/State1.h>
-#include <ant_msgs/State2.h>
-#include <ant_msgs/State3.h>
-#include <ant_msgs/State4.h>
+#define _USE_ANT_MESSAGES 0
 
-#include <ant_msgs/ControlCmd1.h>
-#include <ant_msgs/ControlCmd2.h>
+#if _USE_ANT_MESSAGES
+	#include <ant_msgs/State.h>
+	#include <ant_msgs/State1.h>
+	#include <ant_msgs/State2.h>
+	#include <ant_msgs/State3.h>
+	#include <ant_msgs/State4.h>
+
+	#include <ant_msgs/ControlCmd1.h>
+	#include <ant_msgs/ControlCmd2.h>
+#else
+	#include <driverless_common/VehicleCtrlCmd.h>
+	#include <driverless_common/VehicleState.h>
+#endif
 
 
 #define ID_CMD_1 0x2C5
@@ -31,7 +41,7 @@
 #define ID_STATE4 0x1D5
 
 #ifndef MAX_SPEED
-#define MAX_SPEED 60.0
+#define MAX_SPEED 60.0  //km/h
 #endif
 
 
@@ -49,13 +59,21 @@ static unsigned char send_to_stm32_buf[8] = {0x66,0xCC,0x00,0x04,0x5A};
 
 enum{Stm32MsgHeaderByte0=0x66,Stm32MsgHeaderByte1=0xCC};
 
+
 PACK(
 typedef struct 
 {
-	uint8_t header0;
-	uint8_t header1;
+	uint8_t byte0;
+	uint8_t byte1;
 	unsigned short pkgLen;
 	uint8_t id;
+	
+}) stm32MsgHeader;
+
+PACK(
+typedef struct 
+{
+	stm32MsgHeader header;
 	uint8_t is_start :1;
 	uint8_t is_emergency_brake :1;
 	uint8_t reserved;
@@ -63,6 +81,11 @@ typedef struct
 	
 }) stm32Msg1_t;
 // end for stm32
+
+static float max(float a, float b)
+{
+	return a>b ? a : b;
+}
 
 class BaseControl
 {
@@ -75,9 +98,13 @@ public:
 	void parse_obdCanMsg();
 	void read_stm32_port();
 
+#if _USE_ANT_MESSAGES
 	void callBack1(const ant_msgs::ControlCmd1::ConstPtr msg);
 	void callBack2(const ant_msgs::ControlCmd2::ConstPtr msg);
-	void timer_callBack(const ros::TimerEvent& event);
+#else
+	void cmd_CB(const driverless_common::VehicleCtrlCmd::ConstPtr msg);
+#endif
+	void timer10ms_CB(const ros::TimerEvent& event);
 	
 private:
 	void Stm32BufferIncomingData(unsigned char *message, unsigned int length);
@@ -88,7 +115,7 @@ private:
 	Can2serial can2serial;
 	serial::Serial * stm32_serial_port_;
 	
-	const stm32Msg1_t *stm32_msg1Ptr_;
+	const stm32Msg1_t *stm32_msg1_;
 	
 	bool manualCtrlDetected_; //是否检测到驾驶员介入
 	bool is_driverless_mode_; //是否为自动驾驶模式(实际值)
@@ -98,8 +125,7 @@ private:
 	
 	boost::shared_ptr<boost::thread> readFromStm32_thread_ptr_; 
 	
-	ros::Subscriber cmd1_sub;
-	ros::Subscriber cmd2_sub;
+	std::vector<ros::Subscriber> subscribers_;
 	
 	ros::Publisher state1_pub;
 	ros::Publisher state2_pub;
@@ -117,16 +143,24 @@ private:
 	float max_steering_speed_;  //Front and rear frame maximun steering angle difference
 	int steering_offset_; 
 	
-	
 	CanMsg_t canMsg_cmd1;
+	bool canMsg_cmd1_valid_;
+
 	CanMsg_t canMsg_cmd2;
-	
+	bool canMsg_cmd2_valid_;
+
+#if _USE_ANT_MESSAGES
 	ant_msgs::State1 state1;
 	ant_msgs::State2 state2;
 	ant_msgs::State3 state3;
 	ant_msgs::State4 state4;
+#else
+	driverless_common::VehicleState stateSet_;
+
+#endif
 	
 	boost::mutex mutex_;
+	std::mutex state_mutex_;
 
 };
 

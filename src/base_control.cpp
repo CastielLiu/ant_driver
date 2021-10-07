@@ -38,7 +38,9 @@ static bool openSerial(serial::Serial* & port_ptr, std::string port_name,int bau
 }
 
 BaseControl::BaseControl():
-	stm32_msg1Ptr_((const stm32Msg1_t *)stm32_pkg_buf)
+	allow_driverless_(false),
+	canMsg_cmd1_valid_(false),
+	canMsg_cmd2_valid_(false)
 {
 	is_driverless_mode_ = false;
 	stm32_serial_port_ = NULL;
@@ -46,12 +48,12 @@ BaseControl::BaseControl():
 	canMsg_cmd1.ID = ID_CMD_1;
     canMsg_cmd1.len = 8;
     canMsg_cmd1.type = Can2serial::STD_DATA_FRAME; //standard frame;
-    
-    *(long *)canMsg_cmd1.data = 0;
+    memset(canMsg_cmd1.data, canMsg_cmd1.len, 0);
 
     canMsg_cmd2.ID = ID_CMD_2;
     canMsg_cmd2.len = 8;
     canMsg_cmd2.type = Can2serial::STD_DATA_FRAME;//standard frame;
+	memset(canMsg_cmd2.data, canMsg_cmd1.len, 0);
     
     *(long *)canMsg_cmd2.data = 0;
     canMsg_cmd2.data[4] = 0xFF;
@@ -84,17 +86,22 @@ bool BaseControl::init(int argc,char**argv)
 	
 	assert(!obd_can_port_name_.empty() && !stm32_port_name_.empty());
 	assert(max_steering_speed_>0);
-	
-	cmd1_sub = nh.subscribe("/controlCmd1",1,&BaseControl::callBack1,this);
-	cmd2_sub = nh.subscribe("/controlCmd2",1,&BaseControl::callBack2,this);
+
+#if _USE_ANT_MESSAGES	
+	subscribers_.push_back(nh.subscribe("/controlCmd1",1,&BaseControl::callBack1,this));
+	subscribers_.push_back(nh.subscribe("/controlCmd2",1,&BaseControl::callBack2,this));
 	
 	state1_pub = nh.advertise<ant_msgs::State1>("vehicleState1",10);
 	state2_pub = nh.advertise<ant_msgs::State2>("vehicleState2",10);
 	state3_pub = nh.advertise<ant_msgs::State3>("vehicleState3",10);
 	state4_pub = nh.advertise<ant_msgs::State4>("vehicleState4",10);
 	state_pub = nh.advertise<ant_msgs::State>("vehicleState",10);
+#else
+	subscribers_.push_back(nh.subscribe("/vehicleCmdSet",1,&BaseControl::cmd_CB,this));
+	state_pub = nh.advertise<driverless_common::VehicleState>("/vehicleStateSet",5);
+#endif
 	
-	timer_ = nh.createTimer(ros::Duration(0.03), &BaseControl::timer_callBack, this);
+	timer_ = nh.createTimer(ros::Duration(0.01), &BaseControl::timer10ms_CB, this);
 	
 	if(!openSerial(stm32_serial_port_,stm32_port_name_,stm32_baudrate_))
 		return false;
@@ -145,13 +152,10 @@ void BaseControl::parse_obdCanMsg()
 		//ROS_INFO("parse_obdCanMsg  ing.....");
 		usleep(3000);
 		if(!can2serial.getCanMsg(canMsg))
-		{
-			//ROS_INFO("nothing....");
 			continue;
-		}
 			
 		//ROS_INFO("ID:%x",canMsg.ID);
-			
+	#if _USE_ANT_MESSAGES		
 		switch(canMsg.ID)
 		{
 			case ID_STATE1:
@@ -226,10 +230,80 @@ void BaseControl::parse_obdCanMsg()
 				state4.header.stamp = ros::Time::now();
 				state4_pub.publish(state4);
 				break;
-				
 			default:
 				break;
 		}
+	#else
+		std::lock_guard<std::mutex> lck(state_mutex_);
+		switch(canMsg.ID)
+		{
+			case ID_STATE1:
+				stateSet_.gear = canMsg.data[0] >>4;
+				if((canMsg.data[2]&0x10))
+					stateSet_.gear = stateSet_.GEAR_INVALID;
+
+				stateSet_.accel_pedel_aperture = canMsg.data[1] * 0.4;
+				stateSet_.brake_pedel_aperture = canMsg.data[2] & 0x01;
+				if((canMsg.data[2] & 0x02))
+					stateSet_.accel_pedel_aperture = 255;  //invalid
+				if((canMsg.data[2] & 0x04))
+					stateSet_.brake_pedel_aperture = 255;  //invalid
+				
+				stateSet_.ready = bool(canMsg.data[2]&0x20);
+				stateSet_.driverless = bool(canMsg.data[2]&0x40);
+				break;
+
+			case ID_STATE2:
+			{
+				bool wheel_speed_FL_valid = !(canMsg.data[0] >>6);
+				float wheel_speed_FL = ((canMsg.data[0]&0x3f)*256+canMsg.data[1])*0.0625;
+				bool wheel_speed_FR_valid = !(canMsg.data[1] >>6);
+				float wheel_speed_FR = ((canMsg.data[2]&0x3f)*256+canMsg.data[3])*0.0625;
+				bool wheel_speed_RL_valid = !(canMsg.data[4] >>6);
+				float wheel_speed_RL = ((canMsg.data[4]&0x3f)*256+canMsg.data[5])*0.0625;
+				bool wheel_speed_RR_valid = !(canMsg.data[6] >>6);
+				float wheel_speed_RR = ((canMsg.data[6]&0x3f)*256+canMsg.data[7])*0.0625;
+				{
+					size_t i =0;
+					float speed = 0.0;
+					if(wheel_speed_FL_valid) {i++; speed += wheel_speed_FL;}
+					if(wheel_speed_FR_valid) {i++; speed += wheel_speed_FR;}
+					if(wheel_speed_RL_valid) {i++; speed += wheel_speed_RL;}
+					if(wheel_speed_RR_valid) {i++; speed += wheel_speed_RR;}
+					
+					stateSet_.speed = speed / i; //km/h
+					if(i == 0) stateSet_.speed_validity = false;
+				}
+				break;
+			}
+			case ID_STATE3:
+			{
+				stateSet_.turnlight_l = bool(canMsg.data[1]&0x02);
+				stateSet_.turnlight_r = bool(canMsg.data[1]&0x01);
+				stateSet_.brake_light = bool(canMsg.data[2]&0x01);
+				stateSet_.low_beam = bool(canMsg.data[1]&0x20);
+				stateSet_.high_beam = bool(canMsg.data[1]&0x10);
+				stateSet_.horn = bool(canMsg.data[2]&0x02);
+				break;
+			}
+			case ID_STATE4:
+			{
+				stateSet_.driverless = is_driverless_mode_ = bool(canMsg.data[0]&0x01);
+				stateSet_.roadwheel_angle = (1080.0-(canMsg.data[1]*256+canMsg.data[2])*0.1)/g_steering_gearRatio;
+				stateSet_.roadwheel_angle_validity = !(canMsg.data[1] == 0xff && canMsg.data[2] == 0xff);
+				stateSet_.manualctrl_detected = bool(canMsg.data[0]&0x02);
+				
+				// 检测到手动控制, 此处只置位,不复位
+				if(stateSet_.manualctrl_detected)
+					manualCtrlDetected_ = true;
+
+				float steeringAngle_speed = canMsg.data[3]*4; // deg/s
+				break;
+			}
+			default:
+				break;
+		}
+		#endif
 	}
 }
 
@@ -317,8 +391,8 @@ void BaseControl::Stm32BufferIncomingData(unsigned char *message, unsigned int l
 				bytes_remaining --;
 				if(bytes_remaining == 0)
 				{
-					parse_stm32_msgs();
 					buffer_index = 0;
+					parse_stm32_msgs();
 				}
 				break;
 		}
@@ -327,13 +401,17 @@ void BaseControl::Stm32BufferIncomingData(unsigned char *message, unsigned int l
 
 void BaseControl::parse_stm32_msgs()
 {
-	if(stm32_msg1Ptr_->checkNum != generateCheckNum(stm32_msg1Ptr_,ntohs(stm32_msg1Ptr_->pkgLen)+4))
+	const stm32MsgHeader* header = (const stm32MsgHeader*)stm32_pkg_buf;
+	int data_len = ntohs(header->pkgLen);
+	if(stm32_pkg_buf[data_len+3] != generateCheckNum(stm32_pkg_buf,data_len+4))
 		return ;
-
-	if(stm32_msg1Ptr_->id == 0x01)
+	if(header->id == 0x01)
 	{
+		const stm32Msg1_t* msg1 = (const stm32Msg1_t*)stm32_pkg_buf;
+
 		static bool last_allow_driverless = false;
-	    allow_driverless_ = (stm32_msg1Ptr_->is_start && !stm32_msg1Ptr_->is_emergency_brake);
+	    allow_driverless_ = (msg1->is_start && !msg1->is_emergency_brake);
+
 		if(last_allow_driverless == false && allow_driverless_)
 			manualCtrlDetected_ = false; //重新允许自动驾驶，清除历史检测到的人工介入标志
 		
@@ -341,40 +419,57 @@ void BaseControl::parse_stm32_msgs()
 	}
 }
 
-void BaseControl::timer_callBack(const ros::TimerEvent& event)
+void BaseControl::timer10ms_CB(const ros::TimerEvent& event)
 {
-	//send cmd to stm32
-	send_to_stm32_buf[5] = stm32_brake_ & 0x7f;
-	if(state4.driverless_mode)
-		send_to_stm32_buf[5] |= 0x80;
+	static uint32_t cnt = 0;
+	if(cnt%5 == 0) //50ms
+	{
+		//send cmd to stm32
+		send_to_stm32_buf[5] = stm32_brake_ & 0x7f;
+		if(is_driverless_mode_) send_to_stm32_buf[5] |= 0x80;
+		else send_to_stm32_buf[5] &= 0x7f;
 
-	send_to_stm32_buf[7] = generateCheckNum(send_to_stm32_buf,8);
-	stm32_serial_port_->write(send_to_stm32_buf,8);
-	
-	//发布汽车状态信息，该信息为4部分信息的整合
-	ant_msgs::State state;
-	state.act_gear = state1.act_gear;
-	state.driverless_mode = state4.driverless_mode;
-	state.hand_brake = 0;
-	state.emergency_brake = 0;
-	state.vehicle_ready = state1.vehicle_ready;
-	state.vehicle_speed = state2.vehicle_speed;
-	state.roadwheelAngle = state4.roadwheelAngle;
+		send_to_stm32_buf[7] = generateCheckNum(send_to_stm32_buf,8);
+		stm32_serial_port_->write(send_to_stm32_buf,8);
 
-	state_pub.publish(state);
+		#if _USE_ANT_MESSAGES
+			//发布汽车状态信息，该信息为4部分信息的整合
+			ant_msgs::State state;
+			state.act_gear = state1.act_gear;
+			state.driverless_mode = state4.driverless_mode;
+			state.hand_brake = 0;
+			state.emergency_brake = 0;
+			state.vehicle_ready = state1.vehicle_ready;
+			state.vehicle_speed = state2.vehicle_speed;
+			state.roadwheelAngle = state4.roadwheelAngle;
+			state_pub.publish(state);
+		#else
+			std::lock_guard<std::mutex> lck(state_mutex_);
+			state_pub.publish(stateSet_);
+		#endif
+	}
+	if(cnt%10 == 0) //10ms
+	{
+		if(canMsg_cmd2_valid_)
+		{
+			can2serial.sendCanMsg(canMsg_cmd2);
+			canMsg_cmd2_valid_ = false;
+		}
+	}
+	if(cnt%50 == 1) //50ms
+	{
+		if(canMsg_cmd1_valid_)
+		{
+			can2serial.sendCanMsg(canMsg_cmd1);
+			canMsg_cmd1_valid_ = false;
+		}
+	}
+
 }
 
+#if _USE_ANT_MESSAGES
 void BaseControl::callBack1(const ant_msgs::ControlCmd1::ConstPtr msg)
 {
-	static bool last_set_driverless = false;
-	
-	//重新请求自动驾驶，清除历史检测到的人工介入标志
-	if(last_set_driverless == false && msg->set_driverlessMode)
-	{
-		manualCtrlDetected_ = false;
-	}
-	last_set_driverless = msg->set_driverlessMode;
-
 	if(msg->set_driverlessMode && allow_driverless_ && !manualCtrlDetected_)
 		canMsg_cmd1.data[0] |= 0x01;
 	else
@@ -420,22 +515,19 @@ void BaseControl::callBack1(const ant_msgs::ControlCmd1::ConstPtr msg)
 	else
 		canMsg_cmd1.data[2] &= 0xfd;
 	
-	can2serial.sendCanMsg(canMsg_cmd1);
+	canMsg_cmd1_valid_ = true;
 }
 
 
 void BaseControl::callBack2(const ant_msgs::ControlCmd2::ConstPtr msg)
 {
-//	if(!is_driverless_mode_)
-//		return ;
-		
 	uint8_t set_gear = msg->set_gear;
 	if(!is_driverless_mode_ )
 		set_gear = msg->GEAR_NEUTRAL;
 
 	float set_speed = msg->set_speed;
 	float set_brake = msg->set_brake;
-	int currentSpeed = state2.vehicle_speed * 3.6;
+	float currentSpeed = state2.vehicle_speed * 3.6;
 	
 	if(msg->set_speed == 0)
 	{
@@ -504,11 +596,92 @@ void BaseControl::callBack2(const ant_msgs::ControlCmd2::ConstPtr msg)
 		canMsg_cmd2.data[6] |= 0x10;
 	else
 		canMsg_cmd2.data[6] &= 0xef;
-		
-	can2serial.sendCanMsg(canMsg_cmd2);
 	
+	canMsg_cmd2_valid_ = true;
 	//	std::cout << "stm32_brake_: " << int(stm32_brake_) << std::endl;
 }
+#else
+void BaseControl::cmd_CB(const driverless_common::VehicleCtrlCmd::ConstPtr cmd)
+{
+	memset(canMsg_cmd1.data, canMsg_cmd1.len, 0);
+	if(cmd->driverless && allow_driverless_ && !manualCtrlDetected_)
+		canMsg_cmd1.data[0] |= 0x01;
+		
+	if(cmd->hand_brake) canMsg_cmd1.data[0] |= 0x04;
+	if(cmd->turnlight_r) canMsg_cmd1.data[1] |= 0x01;
+	if(cmd->turnlight_l) canMsg_cmd1.data[1] |= 0x02;
+	if(cmd->low_beam) canMsg_cmd1.data[1] |= 0x20;
+	if(cmd->high_beam) canMsg_cmd1.data[1] |= 0x40;
+	if(cmd->brake_light) canMsg_cmd1.data[2] |= 0x01;
+	if(cmd->horn) canMsg_cmd1.data[2] |= 0x02;
+	canMsg_cmd1_valid_ = true;
+
+	
+	memset(canMsg_cmd2.data, canMsg_cmd2.len, 0);
+	float set_speed = cmd->speed;
+	float set_brake = cmd->brake;
+
+	state_mutex_.lock();
+	float currentSpeed = stateSet_.speed;
+	state_mutex_.unlock();
+
+	//increment越大，加速度越大
+	//设定速度越低，加速越快
+	float increment = 3.0/(currentSpeed/5+1);
+	
+	if(set_speed == 0) 
+		set_brake = max(fabs(currentSpeed - cmd->speed)*1.0 + 40, set_brake);
+	else if(set_speed < currentSpeed-5.0) //当设定速度低于当前速度时，制动
+		set_brake = max((currentSpeed - set_speed) + 40, set_brake);
+	else if(set_speed - currentSpeed > increment)
+		set_speed = currentSpeed + increment;
+
+	if(set_brake > 100) set_brake = 100;
+	if(set_brake > 0.0) set_speed = 0.0;
+	if(set_speed > MAX_SPEED-1) set_speed = MAX_SPEED-1;
+		
+	canMsg_cmd2.data[0] |= (cmd->gear)&0x0f;
+	canMsg_cmd2.data[1] = uint8_t(set_speed * 10 * 15.0 / MAX_SPEED);
+	
+	//制动分配,电制动/外部制动,0-40电制动,40-100,机械制动+电制动
+	if(set_brake>40)
+	{
+		canMsg_cmd2.data[2] = uint8_t(40 *2.5);
+		stm32_brake_ = (set_brake - 40)/60.0 * 100;
+	}
+	else
+	{
+		canMsg_cmd2.data[2] = uint8_t(set_brake *2.5);
+		stm32_brake_ = 0;
+	}
+	
+	canMsg_cmd2.data[3] = uint8_t(cmd->accelerate *50);
+	
+	state_mutex_.lock();
+	static float last_set_steeringAngle = stateSet_.roadwheel_angle * g_steering_gearRatio;
+	state_mutex_.unlock();
+
+	float current_set_steeringAngle = cmd->roadwheel_angle * g_steering_gearRatio;  // -540~540deg
+	
+	if(current_set_steeringAngle>530.0) current_set_steeringAngle=530;
+	else if(current_set_steeringAngle<-500.0) current_set_steeringAngle =-500.0;
+	
+	if(current_set_steeringAngle - last_set_steeringAngle > max_steering_speed_)
+		current_set_steeringAngle = last_set_steeringAngle + max_steering_speed_;
+	else if(current_set_steeringAngle - last_set_steeringAngle < -max_steering_speed_)
+		current_set_steeringAngle = last_set_steeringAngle - max_steering_speed_;
+	
+	last_set_steeringAngle = current_set_steeringAngle;
+	
+	uint16_t steeringAngle = 10800 - (current_set_steeringAngle*10 - steering_offset_) ;
+	
+	canMsg_cmd2.data[4] =  uint8_t(steeringAngle / 256);
+	canMsg_cmd2.data[5] = uint8_t(steeringAngle % 256);
+	
+	if(cmd->emergency_brake) canMsg_cmd2.data[6] |= 0x10;
+	canMsg_cmd2_valid_ = true;
+}
+#endif
 
 uint8_t BaseControl::generateCheckNum(const void* voidPtr,size_t len)
 {
@@ -516,9 +689,7 @@ uint8_t BaseControl::generateCheckNum(const void* voidPtr,size_t len)
     uint8_t sum=0;
 
     for(int i=2; i<len-1 ; i++)
-    {
         sum += ptr[i];
-    }
     return sum;
 }
 
