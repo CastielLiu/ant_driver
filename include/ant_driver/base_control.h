@@ -40,6 +40,13 @@
 #define ID_STATE3 0x4D1
 #define ID_STATE4 0x1D5
 
+#define CMD_GEAR_INITIAL 0
+#define CMD_GEAR_DRIVE 1
+#define CMD_GEAR_REVERSE 9
+#define CMD_GEAR_NEUTRAL 10
+#define CMD_GEAR_PARKING 11
+
+
 #ifndef MAX_SPEED
 #define MAX_SPEED 60.0  //km/h
 #endif
@@ -144,9 +151,11 @@ private:
 	int steering_offset_; 
 	
 	CanMsg_t canMsg_cmd1;
+	std::mutex canMsg_cmd1_mutex_;
 	bool canMsg_cmd1_valid_;
 
 	CanMsg_t canMsg_cmd2;
+	std::mutex canMsg_cmd2_mutex_;
 	bool canMsg_cmd2_valid_;
 
 #if _USE_ANT_MESSAGES

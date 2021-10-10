@@ -273,6 +273,7 @@ void BaseControl::parse_obdCanMsg()
 					
 					stateSet_.speed = speed / i; //km/h
 					if(i == 0) stateSet_.speed_validity = false;
+					else stateSet_.speed_validity = true;
 				}
 				break;
 			}
@@ -405,6 +406,7 @@ void BaseControl::parse_stm32_msgs()
 	int data_len = ntohs(header->pkgLen);
 	if(stm32_pkg_buf[data_len+3] != generateCheckNum(stm32_pkg_buf,data_len+4))
 		return ;
+	// std::cout << "pkg id: " << int(header->id) << std::endl;
 	if(header->id == 0x01)
 	{
 		const stm32Msg1_t* msg1 = (const stm32Msg1_t*)stm32_pkg_buf;
@@ -416,12 +418,18 @@ void BaseControl::parse_stm32_msgs()
 			manualCtrlDetected_ = false; //重新允许自动驾驶，清除历史检测到的人工介入标志
 		
 		last_allow_driverless = allow_driverless_;
+
+		// std::cout << "allow_driverless: " << allow_driverless_ << std::endl
+		// 		<< "s_start: " << int(msg1->is_start) << "\nis_emergency_brake:" <<  int(msg1->is_emergency_brake)
+		// 		<< std::endl;;
 	}
 }
 
 void BaseControl::timer10ms_CB(const ros::TimerEvent& event)
 {
 	static uint32_t cnt = 0;
+	static bool ctrlCmdvalid = false;
+	++ cnt;
 	if(cnt%5 == 0) //50ms
 	{
 		//send cmd to stm32
@@ -448,23 +456,27 @@ void BaseControl::timer10ms_CB(const ros::TimerEvent& event)
 			state_pub.publish(stateSet_);
 		#endif
 	}
-	if(cnt%10 == 0) //10ms
+	if(cnt%5 == 1) //50ms
 	{
-		if(canMsg_cmd2_valid_)
+		if(ctrlCmdvalid)
 		{
-			can2serial.sendCanMsg(canMsg_cmd2);
-			canMsg_cmd2_valid_ = false;
-		}
-	}
-	if(cnt%50 == 1) //50ms
-	{
-		if(canMsg_cmd1_valid_)
-		{
+			std::lock_guard<std::mutex> lck(canMsg_cmd1_mutex_);
 			can2serial.sendCanMsg(canMsg_cmd1);
-			canMsg_cmd1_valid_ = false;
 		}
 	}
-
+	else // 10ms
+	{   
+		if(ctrlCmdvalid) 
+		{
+			std::lock_guard<std::mutex> lck(canMsg_cmd2_mutex_);
+			can2serial.sendCanMsg(canMsg_cmd2);
+		}
+	}
+	if(cnt%30 == 0) // 300ms, 有效性检测
+	{
+		ctrlCmdvalid = (canMsg_cmd1_valid_ && canMsg_cmd2_valid_);
+		canMsg_cmd1_valid_ = canMsg_cmd2_valid_ = false;
+	}
 }
 
 #if _USE_ANT_MESSAGES
@@ -552,7 +564,6 @@ void BaseControl::callBack2(const ant_msgs::ControlCmd2::ConstPtr msg)
 	if(set_speed - currentSpeed > increment )
 		set_speed = currentSpeed + increment;
 			
-		
 	canMsg_cmd2.data[0] &= 0xf0; //clear least 4bits
 	canMsg_cmd2.data[0] |= (set_gear)&0x0f;
 	
@@ -603,9 +614,35 @@ void BaseControl::callBack2(const ant_msgs::ControlCmd2::ConstPtr msg)
 #else
 void BaseControl::cmd_CB(const driverless_common::VehicleCtrlCmd::ConstPtr cmd)
 {
-	memset(canMsg_cmd1.data, canMsg_cmd1.len, 0);
-	if(cmd->driverless && allow_driverless_ && !manualCtrlDetected_)
+	static double last_time = 0;
+	double now_time = ros::Time::now().toSec();
+	float dt = now_time - last_time;
+	last_time = now_time;
+	if(dt > 0.1) 
+		return;
+
+	uint8_t set_gear = CMD_GEAR_INITIAL;
+	if(cmd->gear == cmd->GEAR_DRIVE) set_gear = CMD_GEAR_DRIVE;
+	else if(cmd->gear == cmd->GEAR_REVERSE) set_gear = CMD_GEAR_REVERSE;
+	else if(cmd->gear == cmd->GEAR_PARKING) set_gear = CMD_GEAR_PARKING;
+	else if(cmd->gear == cmd->GEAR_NEUTRAL) set_gear = CMD_GEAR_NEUTRAL;
+
+	// 当未处于自动驾驶状态时，同时置driverless=true gear=D/R, 将导致无法上档
+	// 可以理解为，底层系统处于自动驾驶状态后，通过捕获上升沿进行换挡
+	// 因此，当未处于自动驾驶状态时，无论命令如何，均发送空挡请求
+	if(!stateSet_.driverless) set_gear = CMD_GEAR_NEUTRAL;
+	
+
+	// std::cout << "set_gear: " << int(set_gear) << std::endl;
+	// std::cout << "cmd->driverless： " << int(cmd->driverless) <<"  " << int(allow_driverless_) << "  " 
+	// 			<< int(manualCtrlDetected_) << std::endl;
+	canMsg_cmd1_mutex_.lock();
+	canMsg_cmd1.resetData();
+	if(cmd->driverless && allow_driverless_ && !manualCtrlDetected_){
 		canMsg_cmd1.data[0] |= 0x01;
+	}else{
+		canMsg_cmd1.data[0] &= 0xfe;
+	}
 		
 	if(cmd->hand_brake) canMsg_cmd1.data[0] |= 0x04;
 	if(cmd->turnlight_r) canMsg_cmd1.data[1] |= 0x01;
@@ -615,9 +652,11 @@ void BaseControl::cmd_CB(const driverless_common::VehicleCtrlCmd::ConstPtr cmd)
 	if(cmd->brake_light) canMsg_cmd1.data[2] |= 0x01;
 	if(cmd->horn) canMsg_cmd1.data[2] |= 0x02;
 	canMsg_cmd1_valid_ = true;
+	canMsg_cmd1_mutex_.unlock();
 
-	
-	memset(canMsg_cmd2.data, canMsg_cmd2.len, 0);
+	canMsg_cmd2_mutex_.lock();
+	canMsg_cmd2.resetData();
+
 	float set_speed = cmd->speed;
 	float set_brake = cmd->brake;
 
@@ -639,8 +678,8 @@ void BaseControl::cmd_CB(const driverless_common::VehicleCtrlCmd::ConstPtr cmd)
 	if(set_brake > 100) set_brake = 100;
 	if(set_brake > 0.0) set_speed = 0.0;
 	if(set_speed > MAX_SPEED-1) set_speed = MAX_SPEED-1;
-		
-	canMsg_cmd2.data[0] |= (cmd->gear)&0x0f;
+
+	canMsg_cmd2.data[0] |= set_gear&0x0f;
 	canMsg_cmd2.data[1] = uint8_t(set_speed * 10 * 15.0 / MAX_SPEED);
 	
 	//制动分配,电制动/外部制动,0-40电制动,40-100,机械制动+电制动
@@ -666,10 +705,10 @@ void BaseControl::cmd_CB(const driverless_common::VehicleCtrlCmd::ConstPtr cmd)
 	if(current_set_steeringAngle>530.0) current_set_steeringAngle=530;
 	else if(current_set_steeringAngle<-500.0) current_set_steeringAngle =-500.0;
 	
-	if(current_set_steeringAngle - last_set_steeringAngle > max_steering_speed_)
-		current_set_steeringAngle = last_set_steeringAngle + max_steering_speed_;
-	else if(current_set_steeringAngle - last_set_steeringAngle < -max_steering_speed_)
-		current_set_steeringAngle = last_set_steeringAngle - max_steering_speed_;
+	if(current_set_steeringAngle - last_set_steeringAngle > max_steering_speed_ * dt)
+		current_set_steeringAngle = last_set_steeringAngle + max_steering_speed_ * dt;
+	else if(current_set_steeringAngle - last_set_steeringAngle < -max_steering_speed_ * dt)
+		current_set_steeringAngle = last_set_steeringAngle - max_steering_speed_ * dt;
 	
 	last_set_steeringAngle = current_set_steeringAngle;
 	
@@ -680,6 +719,7 @@ void BaseControl::cmd_CB(const driverless_common::VehicleCtrlCmd::ConstPtr cmd)
 	
 	if(cmd->emergency_brake) canMsg_cmd2.data[6] |= 0x10;
 	canMsg_cmd2_valid_ = true;
+	canMsg_cmd2_mutex_.unlock();
 }
 #endif
 
