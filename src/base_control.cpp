@@ -40,7 +40,8 @@ static bool openSerial(serial::Serial* & port_ptr, std::string port_name,int bau
 BaseControl::BaseControl():
 	allow_driverless_(false),
 	canMsg_cmd1_valid_(false),
-	canMsg_cmd2_valid_(false)
+	canMsg_cmd2_valid_(false),
+	stm32_brake_(0)
 {
 	is_driverless_mode_ = false;
 	stm32_serial_port_ = NULL;
@@ -412,7 +413,9 @@ void BaseControl::parse_stm32_msgs()
 		const stm32Msg1_t* msg1 = (const stm32Msg1_t*)stm32_pkg_buf;
 
 		static bool last_allow_driverless = false;
-	    allow_driverless_ = (msg1->is_start && !msg1->is_emergency_brake);
+		emergency_brake_key_ = msg1->is_emergency_brake;
+
+	    allow_driverless_ = (msg1->is_start && !emergency_brake_key_);
 
 		if(last_allow_driverless == false && allow_driverless_)
 			manualCtrlDetected_ = false; //重新允许自动驾驶，清除历史检测到的人工介入标志
@@ -453,6 +456,8 @@ void BaseControl::timer10ms_CB(const ros::TimerEvent& event)
 			state_pub.publish(state);
 		#else
 			std::lock_guard<std::mutex> lck(state_mutex_);
+			stateSet_.base_ready = allow_driverless_;
+			stateSet_.emergency_brake = emergency_brake_key_;
 			state_pub.publish(stateSet_);
 		#endif
 	}
@@ -631,7 +636,6 @@ void BaseControl::cmd_CB(const driverless_common::VehicleCtrlCmd::ConstPtr cmd)
 	// 可以理解为，底层系统处于自动驾驶状态后，通过捕获上升沿进行换挡
 	// 因此，当未处于自动驾驶状态时，无论命令如何，均发送空挡请求
 	if(!stateSet_.driverless) set_gear = CMD_GEAR_NEUTRAL;
-	
 
 	// std::cout << "set_gear: " << int(set_gear) << std::endl;
 	// std::cout << "cmd->driverless： " << int(cmd->driverless) <<"  " << int(allow_driverless_) << "  " 

@@ -127,6 +127,7 @@ private:
 	bool manualCtrlDetected_; //是否检测到驾驶员介入
 	bool is_driverless_mode_; //是否为自动驾驶模式(实际值)
 	bool allow_driverless_;   //是否允许进入自动驾驶模式
+	bool emergency_brake_key_;
 	uint8_t stm32_brake_;
 	bool default_drive_gear_; //是否默认进入自动驾驶模式后为前进档
 	
